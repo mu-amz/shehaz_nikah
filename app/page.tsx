@@ -3,6 +3,11 @@ import { Fragment, useEffect, useRef, useState } from "react";
 
 type El = HTMLElement | SVGElement;
 
+/* ---- film timing (milliseconds) — change these to speed up / slow down ---- */
+const HOLD = 3000;      // Bismillah shows alone before the doors start opening
+const DURATION = 40000; // doors opening -> closing screen (autoplay speed)
+const RESUME = 2500;    // after you stop touching/scrolling, autoplay continues after this long
+
 const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const ease = (t: number) => t * t * (3 - 2 * t);
 
@@ -68,7 +73,10 @@ function Letters({
 export default function Home() {
   const filmRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const clock = useRef({ playing: true, ended: false, holdUntil: 0 });
   const [days, setDays] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(true);
+  const [ended, setEnded] = useState(false);
 
   // countdown to 20 Nov 2026 (client only, avoids hydration mismatch)
   useEffect(() => {
@@ -78,13 +86,13 @@ export default function Home() {
     setDays(Math.round((target.getTime() - now.getTime()) / 864e5));
   }, []);
 
-  // scroll engine: scroll position -> smoothed progress -> only the things that changed
+  // the film: a clock drives progress 0 -> 1, and only the things that changed get updated
   useEffect(() => {
     const film = filmRef.current;
     const stage = stageRef.current;
     if (!film || !stage) return;
 
-    film.setAttribute("data-live", ""); // switches CSS from the static fallback to the scroll film
+    film.setAttribute("data-live", ""); // switches CSS from the static fallback to the autoplay film
 
     // Lite mode = same design, less work per frame. Default on Android / touch phones.
     // Test either way by opening the site with ?fx=lite or ?fx=full
@@ -165,7 +173,7 @@ export default function Home() {
       }
 
       for (const it of items) {
-        const k = Math.round(ease(clamp((p - it.a) / (it.b - it.a))) * 500) / 500;
+        const k = Math.round(ease(clamp((p - it.a) / (it.b - it.a))) * 1000) / 1000;
         if (k === it.last) continue; // nothing changed -> no style work at all
         it.last = k;
         it.el.style.setProperty("--k", String(k));
@@ -180,7 +188,14 @@ export default function Home() {
       }
     };
 
-    // geometry is measured once (and on resize), never per frame
+    /* Scroll position is the single source of truth.
+       Autoplay simply scrolls the page for you; any touch/wheel/key takes control back. */
+    const c = clock.current;
+    c.playing = !reduce; // reduced-motion users get scroll-only
+    c.ended = false;
+    c.holdUntil = performance.now() + HOLD;
+    if (reduce) setPlaying(false);
+
     let top = 0;
     let span = 1;
     const measure = () => {
@@ -188,66 +203,105 @@ export default function Home() {
       top = r.top + window.scrollY;
       span = Math.max(1, r.height - window.innerHeight);
     };
+    measure();
 
-    let target = 0;
-    let current = 0;
+    let target = clamp((window.scrollY - top) / span);
+    let current = target;
+    let lastP = -1;
+    let userTs = -1e9;
+    let touching = false;
+    let expectedY = window.scrollY;
+    let autoY = window.scrollY;
+    let last = 0;
     let raf = 0;
-    let lastTime = 0;
 
-    const tick = (now: number) => {
-      raf = 0;
-      const dt = Math.min(64, lastTime ? now - lastTime : 16);
-      lastTime = now;
+    const user = () => { userTs = performance.now(); };
+    const touchStart = () => { touching = true; user(); };
+    const touchEnd = () => { touching = false; user(); };
+    const opts = { passive: true } as const;
+    window.addEventListener("touchstart", touchStart, opts);
+    window.addEventListener("touchmove", user, opts);
+    window.addEventListener("touchend", touchEnd, opts);
+    window.addEventListener("touchcancel", touchEnd, opts);
+    window.addEventListener("wheel", user, opts);
+    window.addEventListener("keydown", user);
+    window.addEventListener("pointerdown", user, opts);
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+
+    const frame = (now: number) => {
+      const dt = last ? Math.min(64, now - last) : 16; // clamp so a background tab can't jump ahead
+      last = now;
+
+      const y = window.scrollY;
+      if (Math.abs(y - expectedY) > 2.5) userTs = now; // moved by the user (touch drag or momentum)
+
+      const canAuto = c.playing && !c.ended && !touching && now >= c.holdUntil && now - userTs > RESUME;
+      let pos = y;
+      if (canAuto) {
+        autoY = Math.min(top + span, autoY + (span * dt) / DURATION);
+        window.scrollTo(0, autoY);
+        expectedY = autoY;
+        pos = autoY;
+      } else {
+        autoY = y;
+        expectedY = y;
+      }
+
+      target = clamp((pos - top) / span);
       const d = target - current;
       current = reduce || Math.abs(d) < 0.0001 ? target : current + d * (1 - Math.exp(-dt / 85));
-      apply(current);
-      if (current !== target) raf = requestAnimationFrame(tick);
-      else lastTime = 0;
-    };
-    const kick = () => {
-      if (!raf) raf = requestAnimationFrame(tick);
-    };
-
-    const read = () => {
-      const next = clamp((window.scrollY - top) / span);
-      if (next !== target) {
-        target = next;
-        kick();
+      if (current !== lastP) {
+        apply(current);
+        lastP = current;
       }
+
+      if (target >= 0.998 && !c.ended) {
+        c.ended = true;
+        setEnded(true);
+      } else if (target < 0.99 && c.ended) {
+        c.ended = false;
+        setEnded(false);
+      }
+
+      raf = requestAnimationFrame(frame);
     };
 
-    // Poll every frame too: some mobile browsers only fire scroll events after momentum ends.
-    let poll = 0;
-    const loop = () => {
-      read();
-      poll = requestAnimationFrame(loop);
-    };
-
-    const onResize = () => {
-      measure();
-      read();
-    };
-
-    measure();
-    target = clamp((window.scrollY - top) / span);
-    current = target;
     apply(current);
-    poll = requestAnimationFrame(loop);
-
-    window.addEventListener("scroll", read, { passive: true });
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
+    raf = requestAnimationFrame(frame);
     return () => {
-      if (raf) cancelAnimationFrame(raf);
-      cancelAnimationFrame(poll);
-      window.removeEventListener("scroll", read);
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
+      cancelAnimationFrame(raf);
+      window.removeEventListener("touchstart", touchStart);
+      window.removeEventListener("touchmove", user);
+      window.removeEventListener("touchend", touchEnd);
+      window.removeEventListener("touchcancel", touchEnd);
+      window.removeEventListener("wheel", user);
+      window.removeEventListener("keydown", user);
+      window.removeEventListener("pointerdown", user);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
     };
   }, []);
 
+  const toggle = () => {
+    const c = clock.current;
+    if (c.ended) {
+      window.scrollTo(0, 0);
+      c.holdUntil = performance.now() + HOLD;
+      c.ended = false;
+      c.playing = true;
+      setEnded(false);
+      setPlaying(true);
+      return;
+    }
+    c.playing = !c.playing;
+    setPlaying(c.playing);
+  };
+
   const countdown =
     days === null ? "\u00a0" : days > 1 ? `${days} days to go` : days === 1 ? "Tomorrow, in shaa Allah" : days === 0 ? "Today, in shaa Allah" : "With gratitude";
+
+  const MAPS = "https://www.google.com/maps/search/?api=1&query=Salafi+Masjid%2C+Poothappara%2C+Azhikode";
 
   return (
     <main>
@@ -350,38 +404,22 @@ export default function Home() {
             <div className="body">
               <p className="eyebrow fx" data-s="0.795,0.83">The venue</p>
               <svg className="mosque" data-s="0.80,0.86" viewBox="0 0 240 126" aria-hidden="true" style={{ marginTop: 22 }}>
-                {/* ground */}
                 <path className="draw" pathLength={1} d="M6 118H234" />
-                {/* hall walls and roofline */}
                 <path className="draw" pathLength={1} d="M50 118V84H190V118" />
-                {/* central onion dome, drum, finial and crescent */}
                 <path className="draw" pathLength={1} d="M92 84V72M148 84V72M92 72C84 52 104 44 120 28C136 44 156 52 148 72Z" />
                 <path className="draw" pathLength={1} d="M120 28V21M122 8A6 6 0 1 0 122 20A4.8 4.8 0 1 1 122 8Z" />
-                {/* two small side domes */}
                 <path className="draw" pathLength={1} d="M54 84V80C52 69 62 64 66 57C70 64 80 69 78 80V84M66 57V51" />
                 <path className="draw" pathLength={1} d="M162 84V80C160 69 170 64 174 57C178 64 188 69 186 80V84M174 57V51" />
-                {/* arched door and windows */}
                 <path className="draw" pathLength={1} d="M106 118V102C106 88 134 88 134 102V118" />
                 <path className="draw" pathLength={1} d="M64 118V104C64 95 78 95 78 104V118" />
                 <path className="draw" pathLength={1} d="M162 118V104C162 95 176 95 176 104V118" />
-                {/* left minaret: tower, balcony, round dome */}
                 <path className="draw" pathLength={1} d="M14 118V46M26 118V46M9 62H31M11 46H29" />
                 <path className="draw" pathLength={1} d="M14 46C12 38 18 34 20 28C22 34 28 38 26 46M20 28V21" />
-                {/* right minaret */}
                 <path className="draw" pathLength={1} d="M214 118V46M226 118V46M209 62H231M211 46H229" />
                 <path className="draw" pathLength={1} d="M214 46C212 38 218 34 220 28C222 34 228 38 226 46M220 28V21" />
               </svg>
               <h2 className="venue-h fx" data-s="0.82,0.86">Salafi Masjid</h2>
               <p className="addr fx" data-s="0.84,0.875">Poothappara,<br />Azhikode, Kannur</p>
-              <a
-                className="btn fx"
-                data-s="0.855,0.885"
-                href="https://www.google.com/maps/search/?api=1&query=Salafi+Masjid%2C+Poothappara%2C+Azhikode"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open in maps <span aria-hidden="true">↗</span>
-              </a>
             </div>
           </section>
 
@@ -404,10 +442,13 @@ export default function Home() {
                 <Letters text="Shehaz & Nida" s="0.97,0.995" />
               </p>
               <span className="pill fx" data-s="0.975,0.998">{countdown}</span>
+              <a className="btn btn-ink fx" data-s="0.985,1" href={MAPS} target="_blank" rel="noreferrer">
+                Open venue in maps <span aria-hidden="true">↗</span>
+              </a>
             </div>
           </section>
 
-          {/* ===== OPENING GATE (doors open as you scroll) ===== */}
+          {/* ===== OPENING GATE (doors open by themselves after the Bismillah) ===== */}
           <div className="gate" data-s="0.004,0.09" data-autohide>
             <div className="door door-l" />
             <div className="door door-r" />
@@ -416,7 +457,6 @@ export default function Home() {
               <p className="arabic bismillah" lang="ar" dir="rtl">بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ</p>
               <p className="tr">In the name of Allah, the most gracious and the most merciful</p>
             </div>
-            <div className="gate-bottom"><span>Scroll to open</span><i /></div>
           </div>
 
           {/* ===== AMBIENT LAYERS ===== */}
@@ -425,6 +465,9 @@ export default function Home() {
           <div className="petals" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div>
           <div className="frame" aria-hidden="true" />
           <div className="meter" aria-hidden="true"><i /></div>
+          <button className="ctrl" type="button" onClick={toggle} aria-label={ended ? "Replay invitation" : playing ? "Pause" : "Play"}>
+            {ended ? "↻" : playing ? "❚❚" : "▶"}
+          </button>
         </div>
       </div>
     </main>
