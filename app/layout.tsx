@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Muhammed Shehaz & Nida Mariyum | Nikah Invitation",
   description:
-    "With gratitude to Allah, you are warmly invited to the nikah of Muhammed Shehaz and Nida Mariyyum on Friday, November 20, 2026.",
+    "With gratitude to Allah, you are warmly invited to the nikah of Muhammed Shehaz and Nida Mariyum on Friday, November 20, 2026.",
 };
 
 export const viewport: Viewport = {
