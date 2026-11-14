@@ -205,3 +205,5 @@ body::selection{background:var(--ink);color:var(--cream)}
   .petals,.seal:before,.gate-bottom i,.flower-head{animation:none}
   .petals i{display:none}
 }
+.closing-logo{position:relative;width:92px;height:92px;margin:22px auto 4px;display:flex;align-items:center;justify-content:center;border:1px solid var(--gold);border-radius:50%;background:#f8eedc;color:#8b6331;font-family:"Playfair Display",serif;box-shadow:0 0 0 5px #fffaf0b8,0 8px 20px #5a422622;animation:closing-logo-breathe 4s ease-in-out infinite}.closing-logo span:first-child{font-size:3rem;margin:-7px -9px 0 0}.closing-logo span:nth-child(2){font-size:2.7rem;margin:7px 0 0 -7px}.closing-logo b{position:absolute;bottom:9px;font-size:.72rem}.closing-logo:before{content:"";position:absolute;inset:-9px;border:1px dashed #a77c4688;border-radius:50%;animation:spin 18s linear infinite}@keyframes closing-logo-breathe{0%,100%{transform:scale(.96)}50%{transform:scale(1.04)}}
+@media(prefers-reduced-motion:reduce){.closing-logo,.closing-logo:before{animation:none}}

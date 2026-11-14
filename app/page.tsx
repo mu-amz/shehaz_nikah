@@ -301,7 +301,7 @@ export default function Home() {
   const countdown =
     days === null ? "\u00a0" : days > 1 ? `${days} days to go` : days === 1 ? "Tomorrow, in shaa Allah" : days === 0 ? "Today, in shaa Allah" : "With gratitude";
 
-  const MAPS = "https://www.google.com/maps/search/?api=1&query=Salafi+Masjid%2C+Poothappara%2C+Azhikode";
+  const MAPS = "https://maps.app.goo.gl/E2Y3iEVWSHgWMEyt5";
 
   return (
     <main>
@@ -318,7 +318,7 @@ export default function Home() {
               <h1 style={{ margin: 0 }}>
                 <Letters className="name" text="Muhammed Shehaz" s="0.08,0.14" />
                 <span className="amp fx fx-pop" data-s="0.13,0.16">&amp;</span>
-                <Letters className="name" text="Nida Mariyyum" s="0.14,0.20" />
+                <Letters className="name" text="Nida Mariyum" s="0.14,0.20" />
               </h1>
               <p className="date-line fx" data-s="0.17,0.20">Friday · 20 November 2026 · Kannur</p>
             </div>
@@ -362,7 +362,7 @@ export default function Home() {
                 </div>
                 <div className="person person-r fx from-r" data-s="0.50,0.57">
                   <span className="tag">THE BRIDE</span>
-                  <h2 className="nm">Nida<br />Mariyyum</h2>
+                  <h2 className="nm">Nida<br />Mariyum</h2>
                   <p>Daughter of A P Mahamood &amp; Naseema C</p>
                   <small>Swadaf · Punnakkapara, Azhikode</small>
                 </div>
@@ -438,9 +438,9 @@ export default function Home() {
                 May this beginning be filled with barakah, laughter and a lifetime of love.
               </p>
               <p className="arabic closing-arabic fx" lang="ar" dir="rtl" data-s="0.965,0.985">إِنْ شَاءَ اللّٰهُ</p>
-              <p className="closing-names">
-                <Letters text="Shehaz & Nida" s="0.97,0.995" />
-              </p>
+              <div className="closing-logo" data-s="0.97,0.995" aria-label="Shehaz and Nida">
+                <span>S</span><span>N</span><b>✦</b>
+              </div>
               <span className="pill fx" data-s="0.975,0.998">{countdown}</span>
               <a className="btn btn-ink fx" data-s="0.985,1" href={MAPS} target="_blank" rel="noreferrer">
                 Open venue in maps <span aria-hidden="true">↗</span>
