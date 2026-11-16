@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 type El = HTMLElement | SVGElement;
 
@@ -77,6 +77,40 @@ export default function Home() {
   const [days, setDays] = useState<number | null>(null);
   const [playing, setPlaying] = useState(true);
   const [ended, setEnded] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const wantSound = useRef(true); // becomes false once the visitor mutes
+  const fade = useRef(0);
+  const [soundOn, setSoundOn] = useState(false);
+  const [heard, setHeard] = useState(false);
+
+  const fadeTo = useCallback((v: number, done?: () => void) => {
+    const a = audioRef.current;
+    if (!a) return;
+    window.clearInterval(fade.current);
+    fade.current = window.setInterval(() => {
+      const diff = v - a.volume;
+      if (Math.abs(diff) < 0.03) {
+        a.volume = v;
+        window.clearInterval(fade.current);
+        done?.();
+      } else {
+        a.volume = clamp(a.volume + Math.sign(diff) * 0.03, 0, 1);
+      }
+    }, 60);
+  }, []);
+
+  const playSound = useCallback(() => {
+    const a = audioRef.current;
+    if (!a || !a.paused) return;
+    a.volume = 0;
+    a.play()
+      .then(() => {
+        setSoundOn(true);
+        setHeard(true);
+        fadeTo(0.55); // gentle volume, change 0.55 to taste (0 to 1)
+      })
+      .catch(() => {});
+  }, [fadeTo]);
 
   // countdown to 20 Nov 2026 (client only, avoids hydration mismatch)
   useEffect(() => {
@@ -214,6 +248,7 @@ export default function Home() {
     let autoY = window.scrollY;
     let last = 0;
     let raf = 0;
+    let autoSoundStarted = false;
 
     const user = () => { userTs = performance.now(); };
     const touchStart = () => { touching = true; user(); };
@@ -237,6 +272,12 @@ export default function Home() {
       if (Math.abs(y - expectedY) > 2.5) userTs = now; // moved by the user (touch drag or momentum)
 
       const canAuto = c.playing && !c.ended && !touching && now >= c.holdUntil && now - userTs > RESUME;
+      if (canAuto && !autoSoundStarted) {
+        autoSoundStarted = true;
+        if (wantSound.current) playSound();
+      } else if (!canAuto) {
+        autoSoundStarted = false;
+      }
       let pos = y;
       if (canAuto) {
         autoY = Math.min(top + span, autoY + (span * dt) / DURATION);
@@ -281,7 +322,54 @@ export default function Home() {
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
     };
-  }, []);
+  }, [playSound]);
+
+  /* ---- background audio ----
+     Try playback from manual input and from the automatic scroll transition.
+     The browser may still require one real interaction before allowing sound. */
+  const toggleSound = () => {
+    const a = audioRef.current;
+    if (soundOn) {
+      wantSound.current = false;
+      setSoundOn(false);
+      fadeTo(0, () => a?.pause());
+    } else {
+      wantSound.current = true;
+      playSound();
+    }
+  };
+
+  useEffect(() => {
+    let lastTry = 0;
+    const unlock = () => {
+      const now = Date.now();
+      if (now - lastTry < 800 || !wantSound.current) return;
+      lastTry = now;
+      playSound();
+    };
+    const events = ["touchmove", "wheel", "touchend", "scroll", "click", "keydown"] as const;
+    events.forEach((e) => window.addEventListener(e, unlock, { passive: true }));
+
+    const onVis = () => {
+      const a = audioRef.current;
+      if (!a) return;
+      if (document.hidden) {
+        if (!a.paused) {
+          a.pause();
+          a.dataset.resume = "1";
+        }
+      } else if (a.dataset.resume) {
+        delete a.dataset.resume;
+        a.play().catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, unlock));
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(fade.current);
+    };
+  }, [playSound]);
 
   const toggle = () => {
     const c = clock.current;
@@ -301,7 +389,7 @@ export default function Home() {
   const countdown =
     days === null ? "\u00a0" : days > 1 ? `${days} days to go` : days === 1 ? "Tomorrow, in shaa Allah" : days === 0 ? "Today, in shaa Allah" : "With gratitude";
 
-  const MAPS = "https://maps.app.goo.gl/E2Y3iEVWSHgWMEyt5";
+  const MAPS = "https://www.google.com/maps/search/?api=1&query=Salafi+Masjid%2C+Poothappara%2C+Azhikode";
 
   return (
     <main>
@@ -318,7 +406,7 @@ export default function Home() {
               <h1 style={{ margin: 0 }}>
                 <Letters className="name" text="Muhammed Shehaz" s="0.08,0.14" />
                 <span className="amp fx fx-pop" data-s="0.13,0.16">&amp;</span>
-                <Letters className="name" text="Nida Mariyum" s="0.14,0.20" />
+                <Letters className="name" text="Nida Mariyam" s="0.14,0.20" />
               </h1>
               <p className="date-line fx" data-s="0.17,0.20">Friday · 20 November 2026 · Kannur</p>
             </div>
@@ -362,7 +450,7 @@ export default function Home() {
                 </div>
                 <div className="person person-r fx from-r" data-s="0.50,0.57">
                   <span className="tag">THE BRIDE</span>
-                  <h2 className="nm">Nida<br />Mariyum</h2>
+                  <h2 className="nm">Nida<br />Mariyam</h2>
                   <p>Daughter of A P Mahamood &amp; Naseema C</p>
                   <small>Swadaf · Punnakkapara, Azhikode</small>
                 </div>
@@ -375,7 +463,7 @@ export default function Home() {
             <div className="glow" data-t />
             <div className="body">
               <p className="eyebrow fx" data-s="0.63,0.66">Save the date</p>
-              <h2 className="h-big" style={{ fontSize: "clamp(2.4rem,11vw,3.6rem)" }}>
+              <h2 className="h-big" style={{ fontSize: "clamp(2.2rem,10vw,3.4rem)" }}>
                 <Letters text="A beautiful" by="word" s="0.65,0.69" />
                 <em><Letters text="beginning awaits" by="word" s="0.68,0.72" /></em>
               </h2>
@@ -438,9 +526,9 @@ export default function Home() {
                 May this beginning be filled with barakah, laughter and a lifetime of love.
               </p>
               <p className="arabic closing-arabic fx" lang="ar" dir="rtl" data-s="0.965,0.985">إِنْ شَاءَ اللّٰهُ</p>
-              <div className="closing-logo" data-s="0.97,0.995" aria-label="Shehaz and Nida">
-                <span>S</span><span>N</span><b>✦</b>
-              </div>
+              <p className="closing-names">
+                <Letters text="Shehaz & Nida" s="0.97,0.995" />
+              </p>
               <span className="pill fx" data-s="0.975,0.998">{countdown}</span>
               <a className="btn btn-ink fx" data-s="0.985,1" href={MAPS} target="_blank" rel="noreferrer">
                 Open venue in maps <span aria-hidden="true">↗</span>
@@ -468,6 +556,23 @@ export default function Home() {
           <button className="ctrl" type="button" onClick={toggle} aria-label={ended ? "Replay invitation" : playing ? "Pause" : "Play"}>
             {ended ? "↻" : playing ? "❚❚" : "▶"}
           </button>
+          <button className="ctrl ctrl-sound" type="button" onClick={toggleSound} aria-label={soundOn ? "Mute music" : "Play music"}>
+            {soundOn ? "🔊" : "🔇"}
+          </button>
+          {!heard && <p className="hint">Tap for sound ♪</p>}
+          <audio
+            ref={audioRef}
+            src="/audio/bg.mp3"
+            autoPlay
+            muted={false}
+            loop
+            preload="auto"
+            playsInline
+            onPlay={() => {
+              setSoundOn(true);
+              setHeard(true);
+            }}
+          />
         </div>
       </div>
     </main>
