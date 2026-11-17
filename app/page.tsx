@@ -389,7 +389,7 @@ export default function Home() {
   const countdown =
     days === null ? "\u00a0" : days > 1 ? `${days} days to go` : days === 1 ? "Tomorrow, in shaa Allah" : days === 0 ? "Today, in shaa Allah" : "With gratitude";
 
-  const MAPS = "https://www.google.com/maps/search/?api=1&query=Salafi+Masjid%2C+Poothappara%2C+Azhikode";
+  const MAPS = "https://maps.app.goo.gl/E2Y3iEVWSHgWMEyt5";
 
   return (
     <main>
